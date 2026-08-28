@@ -2,6 +2,7 @@ import { getWorkspace, courseById, workloadClusters } from "@/lib/data/workspace
 import { daysUntil, dueLabel } from "@/lib/utils";
 import { Card, CardHeader, Badge, PageHeader, EmptyState, ButtonLink } from "@/components/ui";
 import { AlertTriangle } from "lucide-react";
+import { AddTask, TaskCheckbox, DeleteTask } from "@/components/app/task-crud";
 
 export const metadata = { title: "Planner" };
 
@@ -36,6 +37,10 @@ export default async function PlannerPage() {
         description="Assignments, projects, exams, labs and study sessions on one timeline."
       />
 
+      {!ws.isDemo && (
+        <AddTask courses={ws.courses.map((c) => ({ id: c.id, name: c.name }))} />
+      )}
+
       {cluster.highWorkload && (
         <Card className="border-warning/40 bg-warning/5">
           <div className="flex items-start gap-3">
@@ -63,8 +68,10 @@ export default async function PlannerPage() {
                   key={t.id}
                   className="flex items-center gap-3 rounded-md border border-border bg-surface-2 px-3 py-2.5 text-sm"
                 >
+                  {!ws.isDemo && <TaskCheckbox id={t.id} done={false} />}
                   <Badge tone={TYPE_TONE[t.type]}>{t.type.replace("_", " ").toLowerCase()}</Badge>
                   <span className="flex-1">{t.title}</span>
+                  {!ws.isDemo && <DeleteTask id={t.id} />}
                   <span className="hidden text-xs text-muted-2 sm:inline">
                     {courseById(ws, t.courseId)?.code ?? ""}
                   </span>

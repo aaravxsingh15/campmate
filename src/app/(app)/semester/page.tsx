@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getWorkspace, courseProgress, courseById } from "@/lib/data/workspace";
 import { daysUntil } from "@/lib/utils";
 import { Card, CardHeader, Progress, Badge, PageHeader, EmptyState, ButtonLink } from "@/components/ui";
+import { AddCourse, AddExam } from "@/components/app/course-crud";
 
 export const metadata = { title: "My Semester" };
 
@@ -24,6 +25,8 @@ export default async function SemesterPage() {
         description={ws.semester.label}
         action={<ButtonLink href="/onboarding" variant="outline" size="sm">Add material</ButtonLink>}
       />
+
+      {!ws.isDemo && <AddCourse />}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {ws.courses.map((c) => {
@@ -52,6 +55,11 @@ export default async function SemesterPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader title="Exams" />
+          {!ws.isDemo && (
+            <div className="mb-3">
+              <AddExam courses={ws.courses.map((c) => ({ id: c.id, name: c.name }))} />
+            </div>
+          )}
           <ul className="space-y-2.5">
             {ws.exams.map((e) => {
               const d = daysUntil(e.date);

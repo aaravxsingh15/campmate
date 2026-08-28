@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getWorkspace } from "@/lib/data/workspace";
+import { isLiveMode } from "@/lib/env";
 import { AppShell } from "@/components/app/shell";
 
 export default async function AppLayout({
@@ -12,6 +13,9 @@ export default async function AppLayout({
   if (!user) redirect("/login");
 
   const ws = await getWorkspace();
+
+  // Live account with no semester yet → send them through onboarding.
+  if (!ws && isLiveMode && !user.isDemo) redirect("/onboarding");
 
   return (
     <AppShell

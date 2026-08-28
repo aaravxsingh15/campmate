@@ -57,6 +57,8 @@ export async function getWorkspace(): Promise<Workspace | null> {
 
   // Live mode — lazy import so demo deployments never load Prisma.
   const { prisma } = await import("@/lib/prisma");
+  const { ensureLiveUser } = await import("@/lib/data/live-user");
+  await ensureLiveUser(); // mirror the Supabase user into our DB on first hit
   const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
   const semester = await prisma.semester.findFirst({
     where: { userId: user.id, isActive: true },

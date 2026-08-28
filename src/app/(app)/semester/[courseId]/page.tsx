@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ChevronLeft, Sparkles } from "lucide-react";
 import { getWorkspace, courseProgress, quizAccuracy } from "@/lib/data/workspace";
 import { Card, CardHeader, Progress, Badge, ButtonLink } from "@/components/ui";
+import { AddTopic, TopicRow } from "@/components/app/topic-crud";
 
 const STATUS_TONE = {
   COMPLETED: "success",
@@ -60,28 +61,48 @@ export default async function CoursePage({
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <Card>
-            <CardHeader title="Syllabus" hint="Edit status as you study — progress updates automatically" />
+            <CardHeader title="Syllabus" hint="Tap a status chip to cycle it — progress updates automatically" />
+            {!ws.isDemo && (
+              <div className="mb-4">
+                <AddTopic courseId={course.id} units={units} />
+              </div>
+            )}
             <div className="space-y-4">
+              {units.length === 0 && (
+                <p className="text-sm text-muted-2">No topics yet. Add your first one above.</p>
+              )}
               {units.map((u) => (
                 <div key={u}>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-2">{u}</p>
+                  {u && (
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-2">{u}</p>
+                  )}
                   <ul className="space-y-1.5">
                     {course.topics
                       .filter((t) => t.unit === u)
-                      .map((t) => (
-                        <li
-                          key={t.id}
-                          className="flex items-center justify-between rounded-md border border-border bg-surface-2 px-3 py-2 text-sm"
-                        >
-                          <span>{t.title}</span>
-                          <span className="flex items-center gap-2">
-                            {t.confidence > 0 && (
-                              <span className="font-mono text-xs text-muted-2">{t.confidence}%</span>
-                            )}
-                            <Badge tone={STATUS_TONE[t.status]}>{STATUS_LABEL[t.status]}</Badge>
-                          </span>
-                        </li>
-                      ))}
+                      .map((t) =>
+                        ws.isDemo ? (
+                          <li
+                            key={t.id}
+                            className="flex items-center justify-between rounded-md border border-border bg-surface-2 px-3 py-2 text-sm"
+                          >
+                            <span>{t.title}</span>
+                            <span className="flex items-center gap-2">
+                              {t.confidence > 0 && (
+                                <span className="font-mono text-xs text-muted-2">{t.confidence}%</span>
+                              )}
+                              <Badge tone={STATUS_TONE[t.status]}>{STATUS_LABEL[t.status]}</Badge>
+                            </span>
+                          </li>
+                        ) : (
+                          <TopicRow
+                            key={t.id}
+                            id={t.id}
+                            title={t.title}
+                            status={t.status}
+                            confidence={t.confidence}
+                          />
+                        ),
+                      )}
                   </ul>
                 </div>
               ))}
