@@ -1,0 +1,292 @@
+// Camp Mate — relational schema
+// Postgres (Supabase). Auth users live in Supabase `auth.users`; `User.id`
+// here mirrors that uuid. All academic data is scoped to a User.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum DocumentType {
+  SYLLABUS
+  LECTURE_NOTES
+  ASSIGNMENT
+  QUESTION_PAPER
+  LAB
+  TIMETABLE
+  OTHER
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum TopicStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  WEAK
+}
+
+enum TaskType {
+  ASSIGNMENT
+  PROJECT
+  EXAM
+  LAB
+  STUDY_SESSION
+  CUSTOM
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum QuestionType {
+  MCQ
+  TRUE_FALSE
+  SHORT_ANSWER
+  CONCEPTUAL
+  CODING
+}
+
+model User {
+  id           String   @id // matches Supabase auth uid
+  email        String   @unique
+  name         String
+  college      String?
+  program      String?
+  year         Int?
+  careerGoal   String?
+  studyHours   Int? // available study hours per week
+  onboardedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  semesters    Semester[]
+  documents    Document[]
+  quizAttempts QuizAttempt[]
+}
+
+model Semester {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String // e.g. "Semester 5 · Autumn 2026"
+  startDate DateTime?
+  endDate   DateTime?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  courses   Course[]
+  exams     Exam[]
+  tasks     Task[]
+  studySessions StudySession[]
+
+  @@index([userId])
+}
+
+model Course {
+  id         String   @id @default(cuid())
+  semesterId String
+  semester   Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  name       String
+  code       String?
+  color      String?
+  createdAt  DateTime @default(now())
+
+  topics       Topic[]
+  documents    Document[]
+  tasks        Task[]
+  exams        Exam[]
+  questions    Question[]
+  quizAttempts QuizAttempt[]
+
+  @@index([semesterId])
+}
+
+model Topic {
+  id        String      @id @default(cuid())
+  courseId  String
+  course    Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  unit      String? // e.g. "Unit 3"
+  title     String
+  order     Int         @default(0)
+  status    TopicStatus @default(NOT_STARTED)
+  confidence Int        @default(0) // 0-100, self / quiz derived
+  createdAt DateTime    @default(now())
+
+  performance TopicPerformance?
+  questions   Question[]
+
+  @@index([courseId])
+}
+
+model Document {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId     String?
+  course       Course?          @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  filename     String
+  storagePath  String
+  mimeType     String
+  sizeBytes    Int
+  type         DocumentType     @default(OTHER)
+  status       ProcessingStatus @default(PENDING)
+  pageCount    Int?
+  error        String?
+  createdAt    DateTime         @default(now())
+
+  chunks       DocumentChunk[]
+
+  @@index([userId])
+  @@index([courseId])
+}
+
+model DocumentChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  index      Int
+  content    String
+  page       Int?
+  // pgvector column is added via migration SQL; stored as Unsupported here.
+  embedding  Unsupported("vector(1536)")?
+
+  @@index([documentId])
+}
+
+model Assignment {
+  id        String     @id @default(cuid())
+  taskId    String     @unique
+  task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  weightPct Float?
+  submittedAt DateTime?
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  semesterId   String
+  semester     Semester   @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  courseId     String?
+  course       Course?    @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  title        String
+  notes        String?
+  type         TaskType   @default(CUSTOM)
+  status       TaskStatus @default(TODO)
+  priority     Priority   @default(MEDIUM)
+  dueDate      DateTime?
+  estimateMins Int?
+  createdAt    DateTime   @default(now())
+
+  assignment   Assignment?
+
+  @@index([semesterId])
+  @@index([courseId])
+}
+
+model Exam {
+  id         String   @id @default(cuid())
+  semesterId String
+  semester   Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  courseId   String?
+  course     Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  title      String
+  date       DateTime
+  location   String?
+  createdAt  DateTime @default(now())
+
+  @@index([semesterId])
+}
+
+model StudySession {
+  id         String   @id @default(cuid())
+  semesterId String
+  semester   Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  topicId    String?
+  title      String
+  date       DateTime
+  durationMins Int
+  done       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([semesterId])
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  courseId    String
+  course      Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  topicId     String?
+  topic       Topic?       @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  type        QuestionType
+  difficulty  Priority     @default(MEDIUM)
+  prompt      String
+  options     String[] // for MCQ
+  answer      String
+  explanation String?
+  sourceDocId String?
+  sourcePage  Int?
+  createdAt   DateTime     @default(now())
+
+  answers     QuizAnswer[]
+
+  @@index([courseId])
+  @@index([topicId])
+}
+
+model QuizAttempt {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId   String?
+  course     Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  label      String
+  scorePct   Float
+  totalCount Int
+  correctCount Int
+  createdAt  DateTime @default(now())
+
+  answers    QuizAnswer[]
+
+  @@index([userId])
+}
+
+model QuizAnswer {
+  id         String      @id @default(cuid())
+  attemptId  String
+  attempt    QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  given      String
+  correct    Boolean
+
+  @@index([attemptId])
+}
+
+model TopicPerformance {
+  id           String   @id @default(cuid())
+  topicId      String   @unique
+  topic        Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  attempts     Int      @default(0)
+  correct      Int      @default(0)
+  accuracyPct  Float    @default(0)
+  lastPracticed DateTime?
+  updatedAt    DateTime @updatedAt
+}
