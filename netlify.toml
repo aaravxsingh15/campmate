@@ -1,0 +1,16 @@
+# Netlify deployment config for Camp Mate (Next.js 16, App Router).
+# Importing the repo in the Netlify UI auto-detects Next.js; this file
+# pins the build so it is reproducible.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  NPM_FLAGS = "--no-audit --no-fund"
+
+# Netlify's official Next.js runtime — handles SSR, route handlers and
+# server components. Netlify installs this from its plugin registry.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
