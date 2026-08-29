@@ -34,6 +34,25 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   if (hasSupabaseCookie) {
     const supabase = await getSupabaseServer();
     if (supabase) {
+      // getClaims() verifies the JWT locally (no round trip to Supabase Auth
+      // when the project uses asymmetric signing keys); falls back to getUser().
+      try {
+        const { data } = await supabase.auth.getClaims();
+        const c = data?.claims;
+        if (c?.sub) {
+          const meta = (c.user_metadata ?? {}) as { name?: string };
+          const email = (c.email as string) ?? "";
+          return {
+            id: c.sub,
+            email,
+            name: meta.name || email.split("@")[0] || "Student",
+            isDemo: false,
+          };
+        }
+      } catch {
+        // fall through to getUser
+      }
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
