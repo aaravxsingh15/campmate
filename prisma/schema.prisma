@@ -166,8 +166,9 @@ model DocumentChunk {
   index      Int
   content    String
   page       Int?
-  // pgvector column is added via migration SQL; stored as Unsupported here.
-  embedding  Unsupported("vector(1536)")?
+  // The pgvector `embedding vector(1536)` column is added later via raw SQL
+  // (needs `create extension vector`) when RAG indexing ships. Kept out of the
+  // Prisma schema so `db push` works on a fresh database.
 
   @@index([documentId])
 }
