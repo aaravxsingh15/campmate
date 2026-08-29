@@ -31,12 +31,21 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     setBusy(true);
     try {
       if (isSignup) {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { name } },
+          options: {
+            data: { name },
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
         });
         if (error) throw error;
+        // Email confirmation disabled → session is returned, go straight in.
+        if (data.session) {
+          router.push("/onboarding");
+          router.refresh();
+          return;
+        }
         setNotice("Account created. Check your email to confirm, then sign in.");
         return;
       }
