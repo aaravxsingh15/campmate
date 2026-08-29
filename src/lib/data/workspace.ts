@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { getSessionUser } from "@/lib/auth";
 import { isLiveMode } from "@/lib/env";
 import { clampPct, daysUntil } from "@/lib/utils";
@@ -38,7 +39,7 @@ const STATUS_WEIGHT: Record<string, number> = {
  * The single entry point every page uses. Live mode reads Prisma; otherwise
  * (and always for the demo user) it serves the labelled demo workspace.
  */
-export async function getWorkspace(): Promise<Workspace | null> {
+export const getWorkspace = cache(async (): Promise<Workspace | null> => {
   const user = await getSessionUser();
   if (!user) return null;
 
@@ -58,27 +59,29 @@ export async function getWorkspace(): Promise<Workspace | null> {
   // Live mode — lazy import so demo deployments never load Prisma.
   const { prisma } = await import("@/lib/prisma");
   const { ensureLiveUser } = await import("@/lib/data/live-user");
-  await ensureLiveUser(); // mirror the Supabase user into our DB on first hit
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-  const semester = await prisma.semester.findFirst({
-    where: { userId: user.id, isActive: true },
-    include: {
-      courses: { include: { topics: { orderBy: { order: "asc" } } } },
-      exams: true,
-      tasks: true,
-    },
-  });
+
+  // One parallel round trip instead of four sequential ones.
+  const [dbUser, semester, documents, quizzes] = await Promise.all([
+    ensureLiveUser(),
+    prisma.semester.findFirst({
+      where: { userId: user.id, isActive: true },
+      include: {
+        courses: { include: { topics: { orderBy: { order: "asc" } } } },
+        exams: true,
+        tasks: true,
+      },
+    }),
+    prisma.document.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.quizAttempt.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
 
   if (!semester) return null;
-
-  const documents = await prisma.document.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-  });
-  const quizzes = await prisma.quizAttempt.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-  });
 
   return {
     isDemo: false,
@@ -146,7 +149,7 @@ export async function getWorkspace(): Promise<Workspace | null> {
       createdAt: q.createdAt.toISOString(),
     })),
   };
-}
+});
 
 /* ---------- derived selectors (pure) ---------- */
 

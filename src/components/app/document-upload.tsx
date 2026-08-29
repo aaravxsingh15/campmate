@@ -1,10 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { UploadCloud } from "lucide-react";
 import { Card, Button } from "@/components/ui";
 
 export function DocumentUpload({ isDemo }: { isDemo: boolean }) {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -13,7 +15,7 @@ export function DocumentUpload({ isDemo }: { isDemo: boolean }) {
     if (!files?.length) return;
     if (isDemo) {
       setMsg(
-        `Demo mode: ${files.length} file(s) selected. Connect Supabase to enable real uploads and processing.`,
+        `Demo mode: ${files.length} file(s) selected. Sign in with a real account to upload.`,
       );
       return;
     }
@@ -24,11 +26,17 @@ export function DocumentUpload({ isDemo }: { isDemo: boolean }) {
       Array.from(files).forEach((f) => form.append("files", f));
       const res = await fetch("/api/documents/upload", { method: "POST", body: form });
       const json = await res.json();
-      setMsg(res.ok ? `Uploaded ${json.count} file(s). Processing…` : json.error ?? "Upload failed");
+      if (res.ok) {
+        setMsg(`Added ${json.count} file(s).`);
+        router.refresh();
+      } else {
+        setMsg(json.error ?? "Upload failed");
+      }
     } catch {
       setMsg("Upload failed — please retry.");
     } finally {
       setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
     }
   }
 
@@ -51,7 +59,7 @@ export function DocumentUpload({ isDemo }: { isDemo: boolean }) {
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.docx,.txt,.csv"
+          accept=".pdf,.docx,.txt,.csv,.md"
           className="hidden"
           onChange={(e) => void onFiles(e.target.files)}
         />
