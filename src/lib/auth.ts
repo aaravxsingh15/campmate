@@ -17,33 +17,43 @@ const DEMO_USER: SessionUser = {
 };
 
 /**
- * Resolve the current viewer. `cache()` dedupes this within a single request,
- * so the layout + page + data layer only do ONE auth check between them.
- *  1. Demo cookie -> demo user (no network).
- *  2. Real Supabase session.
- *  3. null (signed out).
+ * Resolve the current viewer. `cache()` dedupes this within a request, so the
+ * layout + page + data layer only do ONE auth check between them.
+ *
+ * A real Supabase session always wins over a leftover demo cookie. We only make
+ * the Supabase network call when a Supabase auth cookie is actually present, so
+ * demo + signed-out navigation stays instant.
  */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const store = await cookies();
+
+  const hasSupabaseCookie = store
+    .getAll()
+    .some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"));
+
+  if (hasSupabaseCookie) {
+    const supabase = await getSupabaseServer();
+    if (supabase) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        return {
+          id: user.id,
+          email: user.email ?? "",
+          name:
+            (user.user_metadata?.name as string) ||
+            user.email?.split("@")[0] ||
+            "Student",
+          isDemo: false,
+        };
+      }
+    }
+  }
+
   if (store.get("cm_demo")?.value === "1") return DEMO_USER;
 
-  const supabase = await getSupabaseServer();
-  if (!supabase) return null;
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  return {
-    id: user.id,
-    email: user.email ?? "",
-    name:
-      (user.user_metadata?.name as string) ||
-      user.email?.split("@")[0] ||
-      "Student",
-    isDemo: false,
-  };
+  return null;
 });
 
 export async function requireUser(): Promise<SessionUser> {

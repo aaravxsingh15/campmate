@@ -30,6 +30,9 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     }
     setBusy(true);
     try {
+      // Drop any leftover demo session so the real account takes over cleanly.
+      await fetch("/api/auth/demo", { method: "DELETE" }).catch(() => {});
+
       if (isSignup) {
         const { data, error } = await supabase.auth.signUp({
           email,
