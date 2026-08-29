@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getWorkspace } from "@/lib/data/workspace";
 import { retrieve } from "@/lib/rag/retrieve";
 import { chat, isAIConfigured } from "@/lib/ai/provider";
+import { isLiveMode } from "@/lib/env";
 
 const schema = z.object({ question: z.string().min(2).max(1000) });
 
@@ -16,39 +17,61 @@ export async function POST(req: Request) {
   const ws = await getWorkspace();
   if (!ws) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
 
-  const hits = retrieve(ws, question, 3);
-  const grounded = hits.length > 0;
-  const sources = hits.map((h) => ({ filename: h.filename, page: h.page }));
+  // Real document-chunk search in live mode, plus syllabus-topic matches.
+  type Passage = { text: string; filename: string; page: number | null };
+  let passages: Passage[] = [];
+
+  if (isLiveMode && !ws.isDemo) {
+    const { getSessionUser } = await import("@/lib/auth");
+    const { searchChunks } = await import("@/lib/rag/search");
+    const user = await getSessionUser();
+    if (user) {
+      const chunks = await searchChunks(user.id, question, 4);
+      passages = chunks.map((c) => ({ text: c.content, filename: c.filename, page: c.page }));
+    }
+  }
+
+  if (!passages.length) {
+    passages = retrieve(ws, question, 3).map((h) => ({
+      text: h.text,
+      filename: h.filename,
+      page: h.page ?? null,
+    }));
+  }
+
+  const grounded = passages.length > 0;
+  const sources = passages.map((p) => ({ filename: p.filename, page: p.page ?? undefined }));
 
   if (isAIConfigured) {
     try {
-      const context = hits.map((h, i) => `[${i + 1}] ${h.text}`).join("\n");
+      const context = passages.map((p, i) => `[${i + 1}] (${p.filename}${p.page ? ` p.${p.page}` : ""})\n${p.text}`).join("\n\n");
       const answer = await chat([
         {
           role: "system",
           content:
-            "You are Camp Mate, a study assistant. Answer concisely for a college student. " +
-            "Use ONLY the provided context when it is relevant and say when you are giving a general explanation instead. " +
+            "You are Camp Mate, a study assistant for a college student. Answer clearly and concisely. " +
+            "When the provided context is relevant, ground your answer in it and refer to the source. " +
+            "If the context does not cover the question, give a general explanation and say so. " +
             "Never claim something appears in a document unless it is in the context.",
         },
         {
           role: "user",
           content: context
-            ? `Context from the student's material:\n${context}\n\nQuestion: ${question}`
-            : `The student has no matching material. Give a clear general explanation.\n\nQuestion: ${question}`,
+            ? `Context from my uploaded material:\n\n${context}\n\nQuestion: ${question}`
+            : `I have no matching uploaded material. Give a clear general explanation.\n\nQuestion: ${question}`,
         },
       ]);
       return NextResponse.json({ answer, grounded, sources });
     } catch {
-      // fall through to templated answer
+      // fall through
     }
   }
 
   const answer = grounded
-    ? `Your material covers this under:\n${hits
-        .map((h) => `• ${h.text}`)
-        .join("\n")}\n\nConnect an AI provider (AI_API_KEY, AI_MODEL) for a full explanation grounded in these sources.`
-    : `Nothing in your uploaded material matches "${question}" yet. Upload the relevant notes or syllabus, or connect an AI provider for a general explanation.`;
+    ? `Found this in your material:\n\n${passages
+        .map((p) => `• ${p.filename}${p.page ? ` (p.${p.page})` : ""}: ${p.text.slice(0, 240)}…`)
+        .join("\n\n")}\n\nAdd an AI key (AI_API_KEY, AI_MODEL) for a full explanation built from these sources.`
+    : `Nothing in your uploaded material matches "${question}" yet. Upload the relevant notes, or add an AI key for a general explanation.`;
 
   return NextResponse.json({ answer, grounded, sources });
 }

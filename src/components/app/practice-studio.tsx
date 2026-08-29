@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sparkles, Check, X } from "lucide-react";
 import { Card, CardHeader, Button, Badge, Progress } from "@/components/ui";
 
@@ -30,18 +31,48 @@ export function PracticeStudio({
   courses: Course[];
   weakTopics: { id: string; title: string }[];
 }) {
+  const router = useRouter();
   const [phase, setPhase] = useState<Phase>("config");
   const [courseId, setCourseId] = useState(courses[0]?.id ?? "");
   const [difficulty, setDifficulty] = useState("medium");
   const [count, setCount] = useState(5);
   const [type, setType] = useState("MCQ");
   const [busy, setBusy] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [label, setLabel] = useState("Practice session");
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   const course = courses.find((c) => c.id === courseId);
+
+  async function submit() {
+    setPhase("result");
+    setSaveMsg(null);
+    const payload = {
+      label,
+      courseId: courseId || null,
+      answers: questions
+        .filter((q) => answers[q.id] != null && !q.id.startsWith("demo-"))
+        .map((q) => ({ questionId: q.id, given: answers[q.id] })),
+    };
+    if (!payload.answers.length) return;
+    try {
+      const res = await fetch("/api/quiz/submit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (json.saved) {
+        setSaveMsg("Saved to your history — weak topics and analytics updated.");
+        router.refresh();
+      }
+    } catch {
+      /* non-blocking */
+    }
+  }
 
   async function generate(mode: "normal" | "surprise") {
     setBusy(true);
@@ -53,6 +84,9 @@ export function PracticeStudio({
       });
       const json = await res.json();
       setQuestions(json.questions ?? []);
+      setLabel(
+        `${course?.name ?? "Practice"} — ${new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
+      );
       setAnswers({});
       setIdx(0);
       setPhase("quiz");
@@ -164,7 +198,7 @@ export function PracticeStudio({
           {idx < questions.length - 1 ? (
             <Button onClick={() => setIdx((i) => i + 1)}>Next</Button>
           ) : (
-            <Button onClick={() => setPhase("result")}>Submit</Button>
+            <Button onClick={submit}>Submit</Button>
           )}
         </div>
       </Card>
@@ -182,6 +216,7 @@ export function PracticeStudio({
         <span className="pb-1 text-sm text-muted-2">{pct}% accuracy</span>
       </div>
       <Progress value={pct} className="mt-3" tone={pct >= 70 ? "success" : "warning"} />
+      {saveMsg && <p className="mt-2 text-xs text-success">{saveMsg}</p>}
 
       <div className="mt-6 space-y-3">
         {questions.map((q) => {

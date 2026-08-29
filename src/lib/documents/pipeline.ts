@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { chunkText, extractText } from "@/lib/documents/extract";
 
 function admin() {
   return createClient(env.supabaseUrl, env.supabaseServiceRoleKey, {
@@ -21,50 +22,46 @@ function guessType(
   return "OTHER";
 }
 
-function chunk(text: string, size = 1200): string[] {
-  const clean = text.replace(/\s+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-  if (!clean) return [];
-  const out: string[] = [];
-  for (let i = 0; i < clean.length; i += size) out.push(clean.slice(i, i + size));
-  return out.slice(0, 60);
-}
-
 /**
- * Uploads files to Supabase Storage and records a Document row per file.
- * Plain-text formats (.txt/.csv) are extracted + chunked inline (instant).
- * PDF/DOCX are stored and marked READY; rich extraction is a follow-up.
- * All files are processed in parallel.
+ * Upload each file to Supabase Storage, extract its text (PDF via unpdf, DOCX
+ * via mammoth, plain text directly), chunk it, and store a Document + chunks.
+ * Everything runs in parallel across files.
  */
-export async function uploadDocuments(userId: string, files: File[]) {
+export async function uploadDocuments(
+  userId: string,
+  files: File[],
+  courseId?: string | null,
+) {
   const sb = admin();
   const stamp = Date.now();
 
-  const results = await Promise.all(
+  return Promise.all(
     files.map(async (file) => {
       const path = `${userId}/${stamp}-${file.name}`;
       const buf = await file.arrayBuffer();
+      const mime = file.type || "application/octet-stream";
 
-      const { error } = await sb.storage
-        .from(env.supabaseBucket)
-        .upload(path, new Uint8Array(buf), {
-          contentType: file.type || "application/octet-stream",
-          upsert: false,
-        });
+      const [{ error }, text] = await Promise.all([
+        sb.storage
+          .from(env.supabaseBucket)
+          .upload(path, new Uint8Array(buf), { contentType: mime, upsert: false }),
+        extractText(buf, file.name, mime),
+      ]);
       if (error) throw new Error(`Storage upload failed for ${file.name}: ${error.message}`);
 
-      const isText =
-        file.type.startsWith("text/") || /\.(txt|csv|md)$/i.test(file.name);
-      const chunks = isText ? chunk(new TextDecoder().decode(buf)) : [];
+      const chunks = chunkText(text);
 
       const doc = await prisma.document.create({
         data: {
           userId,
+          courseId: courseId || null,
           filename: file.name,
           storagePath: path,
-          mimeType: file.type || "application/octet-stream",
+          mimeType: mime,
           sizeBytes: file.size,
           type: guessType(file.name),
           status: "READY",
+          pageCount: chunks.length || null,
           chunks: chunks.length
             ? { create: chunks.map((content, index) => ({ index, content })) }
             : undefined,
@@ -74,6 +71,4 @@ export async function uploadDocuments(userId: string, files: File[]) {
       return doc;
     }),
   );
-
-  return results;
 }
